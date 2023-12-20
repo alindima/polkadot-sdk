@@ -18,12 +18,13 @@
 
 use parity_scale_codec::{Decode, Encode};
 
+use polkadot_node_primitives::{ErasureChunk, Proof};
 use polkadot_primitives::{
-	CandidateHash, CommittedCandidateReceipt, Hash, Id as ParaId, PersistedValidationData,
-	UncheckedSignedStatement,
+	CandidateHash, ChunkIndex, CommittedCandidateReceipt, Hash, Id as ParaId,
+	PersistedValidationData, UncheckedSignedStatement,
 };
 
-use super::{IsRequest, Protocol};
+use super::{v1, IsRequest, Protocol};
 use crate::v2::StatementFilter;
 
 /// Request a candidate with statements.
@@ -77,4 +78,78 @@ impl IsRequest for CollationFetchingRequest {
 	// The response is the same as for V1.
 	type Response = CollationFetchingResponse;
 	const PROTOCOL: Protocol = Protocol::CollationFetchingV2;
+}
+
+/// Request an availability chunk.
+#[derive(Debug, Copy, Clone, Encode, Decode)]
+pub struct ChunkFetchingRequest {
+	/// Hash of candidate we want a chunk for.
+	pub candidate_hash: CandidateHash,
+	/// The index of the chunk to fetch.
+	pub index: ChunkIndex,
+}
+
+/// Receive a requested erasure chunk.
+#[derive(Debug, Clone, Encode, Decode)]
+pub enum ChunkFetchingResponse {
+	/// The requested chunk data.
+	#[codec(index = 0)]
+	Chunk(ChunkResponse),
+	/// Node was not in possession of the requested chunk.
+	#[codec(index = 1)]
+	NoSuchChunk,
+}
+
+impl From<Option<ChunkResponse>> for ChunkFetchingResponse {
+	fn from(x: Option<ChunkResponse>) -> Self {
+		match x {
+			Some(c) => ChunkFetchingResponse::Chunk(c),
+			None => ChunkFetchingResponse::NoSuchChunk,
+		}
+	}
+}
+
+impl From<v1::ChunkFetchingRequest> for ChunkFetchingRequest {
+	fn from(v1::ChunkFetchingRequest { candidate_hash, index }: v1::ChunkFetchingRequest) -> Self {
+		Self { candidate_hash, index }
+	}
+}
+
+impl From<ChunkFetchingRequest> for v1::ChunkFetchingRequest {
+	fn from(ChunkFetchingRequest { candidate_hash, index }: ChunkFetchingRequest) -> Self {
+		Self { candidate_hash, index }
+	}
+}
+
+/// Skimmed down variant of `ErasureChunk`.
+///
+/// Instead of transmitting a full `ErasureChunk` we transmit `ChunkResponse` in
+/// `ChunkFetchingResponse`, which omits the chunk's index. The index is already known by
+/// the requester and by not transmitting it, we ensure the requester is going to use his index
+/// value for validating the response, thus making sure he got what he requested.
+#[derive(Debug, Clone, Encode, Decode)]
+pub struct ChunkResponse {
+	/// The erasure-encoded chunk of data belonging to the candidate block.
+	pub chunk: Vec<u8>,
+	/// Proof for this chunk's branch in the Merkle tree.
+	pub proof: Proof,
+	/// The index of the fetched chunk.
+	pub index: ChunkIndex,
+}
+
+impl From<ErasureChunk> for ChunkResponse {
+	fn from(ErasureChunk { chunk, index, proof }: ErasureChunk) -> Self {
+		ChunkResponse { chunk, proof, index }
+	}
+}
+
+impl From<ChunkResponse> for ErasureChunk {
+	fn from(value: ChunkResponse) -> Self {
+		Self { chunk: value.chunk, proof: value.proof, index: value.index }
+	}
+}
+
+impl IsRequest for ChunkFetchingRequest {
+	type Response = ChunkFetchingResponse;
+	const PROTOCOL: Protocol = Protocol::ChunkFetchingV2;
 }

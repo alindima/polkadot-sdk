@@ -1048,11 +1048,21 @@ where
 		target: PeerId,
 		protocol: ProtocolName,
 		request: Vec<u8>,
+		fallback_protocol: Option<ProtocolName>,
+		fallback_request: Option<Vec<u8>>,
 		connect: IfDisconnected,
-	) -> Result<Vec<u8>, RequestFailure> {
+	) -> Result<(Vec<u8>, ProtocolName), RequestFailure> {
 		let (tx, rx) = oneshot::channel();
 
-		self.start_request(target, protocol, request, tx, connect);
+		self.start_request(
+			target,
+			protocol,
+			request,
+			fallback_protocol,
+			fallback_request,
+			tx,
+			connect,
+		);
 
 		match rx.await {
 			Ok(v) => v,
@@ -1068,13 +1078,17 @@ where
 		target: PeerId,
 		protocol: ProtocolName,
 		request: Vec<u8>,
-		tx: oneshot::Sender<Result<Vec<u8>, RequestFailure>>,
+		fallback_protocol: Option<ProtocolName>,
+		fallback_request: Option<Vec<u8>>,
+		tx: oneshot::Sender<Result<(Vec<u8>, ProtocolName), RequestFailure>>,
 		connect: IfDisconnected,
 	) {
 		let _ = self.to_worker.unbounded_send(ServiceToWorkerMsg::Request {
 			target,
 			protocol: protocol.into(),
 			request,
+			fallback_request,
+			fallback_protocol,
 			pending_response: tx,
 			connect,
 		});
@@ -1160,7 +1174,9 @@ enum ServiceToWorkerMsg {
 		target: PeerId,
 		protocol: ProtocolName,
 		request: Vec<u8>,
-		pending_response: oneshot::Sender<Result<Vec<u8>, RequestFailure>>,
+		fallback_request: Option<Vec<u8>>,
+		fallback_protocol: Option<ProtocolName>,
+		pending_response: oneshot::Sender<Result<(Vec<u8>, ProtocolName), RequestFailure>>,
 		connect: IfDisconnected,
 	},
 	NetworkStatus {
@@ -1287,13 +1303,17 @@ where
 				target,
 				protocol,
 				request,
+				fallback_request,
+				fallback_protocol,
 				pending_response,
 				connect,
 			} => {
 				self.network_service.behaviour_mut().send_request(
 					&target,
-					&protocol,
+					protocol,
 					request,
+					fallback_request,
+					fallback_protocol,
 					pending_response,
 					connect,
 				);

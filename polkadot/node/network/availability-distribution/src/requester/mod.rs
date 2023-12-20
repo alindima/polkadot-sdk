@@ -29,6 +29,7 @@ use futures::{
 	Stream,
 };
 
+use polkadot_node_network_protocol::request_response::{v1, v2, IsRequest, ReqProtocolNames};
 use polkadot_node_subsystem::{
 	jaeger,
 	messages::{ChainApiMessage, RuntimeApiMessage},
@@ -81,6 +82,9 @@ pub struct Requester {
 
 	/// Cache of our chunk indices based on the relay parent block and core index.
 	chunk_indices: ChunkIndexCacheRegistry,
+
+	/// TODO
+	req_protocol_names: ReqProtocolNames,
 }
 
 #[overseer::contextbounds(AvailabilityDistribution, prefix = self::overseer)]
@@ -92,7 +96,7 @@ impl Requester {
 	///
 	/// You must feed it with `ActiveLeavesUpdate` via `update_fetching_heads` and make it progress
 	/// by advancing the stream.
-	pub fn new(metrics: Metrics) -> Self {
+	pub fn new(req_protocol_names: ReqProtocolNames, metrics: Metrics) -> Self {
 		let (tx, rx) = mpsc::channel(1);
 		Requester {
 			fetches: HashMap::new(),
@@ -103,6 +107,7 @@ impl Requester {
 			// Candidates shouldn't be pending availability for many blocks, so keep our index for
 			// the last two relay parents.
 			chunk_indices: ChunkIndexCacheRegistry::new(2),
+			req_protocol_names,
 		}
 	}
 
@@ -300,6 +305,8 @@ impl Requester {
 						session_info,
 						chunk_index,
 						span,
+						self.req_protocol_names.get_name(v1::ChunkFetchingRequest::PROTOCOL),
+						self.req_protocol_names.get_name(v2::ChunkFetchingRequest::PROTOCOL),
 					);
 
 					self.fetches

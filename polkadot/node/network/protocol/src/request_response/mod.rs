@@ -79,6 +79,10 @@ pub enum Protocol {
 	/// Protocol for requesting candidates with attestations in statement distribution
 	/// when async backing is enabled.
 	AttestedCandidateV2,
+
+	/// Protocol for chunk fetching version 2, used by availability distribution and availability
+	/// recovery.
+	ChunkFetchingV2,
 }
 
 /// Minimum bandwidth we expect for validators - 500Mbit/s is the recommendation, so approximately
@@ -190,7 +194,7 @@ impl Protocol {
 		let name = req_protocol_names.get_name(self);
 		let fallback_names = self.get_fallback_names();
 		match self {
-			Protocol::ChunkFetchingV1 => RequestResponseConfig {
+			Protocol::ChunkFetchingV1 | Protocol::ChunkFetchingV2 => RequestResponseConfig {
 				name,
 				fallback_names,
 				max_request_size: 1_000,
@@ -273,7 +277,7 @@ impl Protocol {
 			// times (due to network delays), 100 seems big enough to accomodate for "bursts",
 			// assuming we can service requests relatively quickly, which would need to be measured
 			// as well.
-			Protocol::ChunkFetchingV1 => 100,
+			Protocol::ChunkFetchingV1 | Protocol::ChunkFetchingV2 => 100,
 			// 10 seems reasonable, considering group sizes of max 10 validators.
 			Protocol::CollationFetchingV1 | Protocol::CollationFetchingV2 => 10,
 			// 10 seems reasonable, considering group sizes of max 10 validators.
@@ -333,6 +337,24 @@ impl Protocol {
 		self.get_legacy_name().into_iter().map(Into::into).collect()
 	}
 
+	// fn get_fallback_names(self, req_protocol_names: &ReqProtocolNames) -> Vec<ProtocolName> {
+	// 	let previous_version_protocols = self.get_previous_version();
+	// 	let previous_version_name =
+	// 		previous_version_protocols.map(|protocol| req_protocol_names.get_name(protocol));
+
+	// 	previous_version_name
+	// 		.into_iter()
+	// 		.chain(self.get_legacy_name().into_iter().map(Into::into))
+	// 		.collect()
+	// }
+
+	// const fn get_previous_version(self) -> Option<Self> {
+	// 	match self {
+	// 		Protocol::ChunkFetchingV2 => Some(Self::ChunkFetchingV1),
+	// 		_ => None,
+	// 	}
+	// }
+
 	/// Legacy protocol name associated with each peer set, if any.
 	const fn get_legacy_name(self) -> Option<&'static str> {
 		match self {
@@ -346,6 +368,7 @@ impl Protocol {
 			// Introduced after legacy names became legacy.
 			Protocol::AttestedCandidateV2 => None,
 			Protocol::CollationFetchingV2 => None,
+			Protocol::ChunkFetchingV2 => None,
 		}
 	}
 }
@@ -360,6 +383,7 @@ pub trait IsRequest {
 }
 
 /// Type for getting on the wire [`Protocol`] names using genesis hash & fork id.
+#[derive(Clone)]
 pub struct ReqProtocolNames {
 	names: HashMap<Protocol, ProtocolName>,
 }
@@ -404,6 +428,7 @@ impl ReqProtocolNames {
 
 			Protocol::CollationFetchingV2 => "/req_collation/2",
 			Protocol::AttestedCandidateV2 => "/req_attested_candidate/2",
+			Protocol::ChunkFetchingV2 => "/req_chunk/2",
 		};
 
 		format!("{}{}", prefix, short_name).into()

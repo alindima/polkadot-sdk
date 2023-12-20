@@ -264,7 +264,10 @@ impl Network for Arc<NetworkService<Block, Hash>> {
 		req_protocol_names: &ReqProtocolNames,
 		if_disconnected: IfDisconnected,
 	) {
-		let (protocol, OutgoingRequest { peer, payload, pending_response }) = req.encode_request();
+		let (
+			(protocol, OutgoingRequest { peer, payload, pending_response, fallback_request }),
+			fallback_protocol,
+		) = req.encode_request();
 
 		let peer_id = match peer {
 			Recipient::Peer(peer_id) => Some(peer_id),
@@ -315,6 +318,7 @@ impl Network for Arc<NetworkService<Block, Hash>> {
 			target: LOG_TARGET,
 			%peer_id,
 			protocol = %req_protocol_names.get_name(protocol),
+			fallback_protocol = ?fallback_protocol.map(|p| req_protocol_names.get_name(p)),
 			?if_disconnected,
 			"Starting request",
 		);
@@ -324,6 +328,8 @@ impl Network for Arc<NetworkService<Block, Hash>> {
 			peer_id,
 			req_protocol_names.get_name(protocol),
 			payload,
+			fallback_protocol.map(|protocol| req_protocol_names.get_name(protocol)),
+			fallback_request,
 			pending_response,
 			if_disconnected,
 		);

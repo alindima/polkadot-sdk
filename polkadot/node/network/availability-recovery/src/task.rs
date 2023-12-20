@@ -22,7 +22,7 @@ use crate::{
 	futures_undead::FuturesUndead, metrics::Metrics, ErasureTask, PostRecoveryCheck, LOG_TARGET,
 };
 use futures::{channel::oneshot, SinkExt};
-use parity_scale_codec::Encode;
+use parity_scale_codec::{Decode, Encode};
 use polkadot_erasure_coding::branch_hash;
 #[cfg(not(test))]
 use polkadot_node_network_protocol::request_response::CHUNK_REQUEST_TIMEOUT;
@@ -38,7 +38,7 @@ use polkadot_primitives::{
 	AuthorityDiscoveryId, BlakeTwo256, CandidateHash, ChunkIndex, Hash, HashT, ValidatorIndex,
 };
 use rand::seq::SliceRandom;
-use sc_network::{IfDisconnected, OutboundFailure, RequestFailure};
+use sc_network::{IfDisconnected, OutboundFailure, ProtocolName, RequestFailure};
 use std::{
 	collections::{BTreeMap, HashMap, VecDeque},
 	time::Duration,
@@ -155,6 +155,12 @@ pub struct RecoveryParams {
 
 	/// The blake2-256 hash of the PoV.
 	pub pov_hash: Hash,
+
+	/// Protocol name for ChunkFetchingV1.
+	pub req_v1_protocol_name: ProtocolName,
+
+	/// Protocol name for ChunkFetchingV2.
+	pub req_v2_protocol_name: ProtocolName,
 }
 
 /// Utility type used for recording the result of requesting a chunk from a validator.
@@ -310,23 +316,49 @@ impl State {
 				);
 
 				// Request data.
-				let raw_request = req_res::v1::ChunkFetchingRequest {
+				let raw_request_v1 = req_res::v1::ChunkFetchingRequest {
+					candidate_hash: params.candidate_hash,
+					index: chunk_index,
+				};
+				let raw_request_v2 = req_res::v2::ChunkFetchingRequest {
 					candidate_hash: params.candidate_hash,
 					index: chunk_index,
 				};
 
-				let (req, res) = OutgoingRequest::new(Recipient::Authority(validator), raw_request);
-				requests.push(Requests::ChunkFetchingV1(req));
+				let (req, res) = OutgoingRequest::new_with_fallback(
+					Recipient::Authority(validator),
+					raw_request_v2,
+					raw_request_v1,
+				);
+				requests.push(Requests::ChunkFetching(req));
 
 				params.metrics.on_chunk_request_issued(strategy_type);
 				let timer = params.metrics.time_chunk_request(strategy_type);
+				let v1_protocol_name = params.req_v1_protocol_name.clone();
+				let v2_protocol_name = params.req_v2_protocol_name.clone();
 
 				requesting_chunks.push(Box::pin(async move {
 					let _timer = timer;
 					let res = match res.await {
-						Ok(req_res::v1::ChunkFetchingResponse::Chunk(chunk)) =>
-							Ok(Some(chunk.recombine_into_chunk(&raw_request))),
-						Ok(req_res::v1::ChunkFetchingResponse::NoSuchChunk) => Ok(None),
+						Ok((bytes, protocol)) =>
+							if v2_protocol_name == protocol {
+								match req_res::v2::ChunkFetchingResponse::decode(&mut &bytes[..]) {
+									Ok(req_res::v2::ChunkFetchingResponse::Chunk(chunk)) =>
+										Ok(Some(chunk.into())),
+									Ok(req_res::v2::ChunkFetchingResponse::NoSuchChunk) => Ok(None),
+									Err(e) => Err(RequestError::InvalidResponse(e)),
+								}
+							} else if v1_protocol_name == protocol {
+								match req_res::v1::ChunkFetchingResponse::decode(&mut &bytes[..]) {
+									Ok(req_res::v1::ChunkFetchingResponse::Chunk(chunk)) =>
+										Ok(Some(chunk.recombine_into_chunk(&raw_request_v1))),
+									Ok(req_res::v1::ChunkFetchingResponse::NoSuchChunk) => Ok(None),
+									Err(e) => Err(RequestError::InvalidResponse(e)),
+								}
+							} else {
+								Err(RequestError::NetworkError(RequestFailure::UnknownProtocol))
+							},
+
 						Err(e) => Err(e),
 					};
 

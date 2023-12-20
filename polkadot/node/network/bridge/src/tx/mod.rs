@@ -301,7 +301,7 @@ where
 
 			for req in reqs {
 				match req {
-					Requests::ChunkFetchingV1(_) => metrics.on_message("chunk_fetching_v1"),
+					Requests::ChunkFetching(_) => metrics.on_message("chunk_fetching_v1"),
 					Requests::AvailableDataFetchingV1(_) =>
 						metrics.on_message("available_data_fetching_v1"),
 					Requests::CollationFetchingV1(_) => metrics.on_message("collation_fetching_v1"),

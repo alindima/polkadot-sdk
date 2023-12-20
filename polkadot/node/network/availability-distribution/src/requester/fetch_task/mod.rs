@@ -22,10 +22,11 @@ use futures::{
 	FutureExt, SinkExt,
 };
 
+use parity_scale_codec::Decode;
 use polkadot_erasure_coding::branch_hash;
 use polkadot_node_network_protocol::request_response::{
 	outgoing::{OutgoingRequest, Recipient, RequestError, Requests},
-	v1::{ChunkFetchingRequest, ChunkFetchingResponse},
+	v1, v2,
 };
 use polkadot_node_primitives::ErasureChunk;
 use polkadot_node_subsystem::{
@@ -37,6 +38,7 @@ use polkadot_primitives::{
 	AuthorityDiscoveryId, BlakeTwo256, CandidateHash, ChunkIndex, GroupIndex, Hash, HashT,
 	OccupiedCore, SessionIndex,
 };
+use sc_network::ProtocolName;
 
 use crate::{
 	error::{FatalError, Result},
@@ -112,7 +114,7 @@ struct RunningTask {
 	group: Vec<AuthorityDiscoveryId>,
 
 	/// The request to send.
-	request: ChunkFetchingRequest,
+	request: v2::ChunkFetchingRequest,
 
 	/// Root hash, for verifying the chunks validity.
 	erasure_root: Hash,
@@ -128,6 +130,12 @@ struct RunningTask {
 
 	/// Span tracking the fetching of this chunk.
 	span: jaeger::Span,
+
+	/// TODO
+	req_v1_protocol_name: ProtocolName,
+
+	/// TODO
+	req_v2_protocol_name: ProtocolName,
 }
 
 impl FetchTaskConfig {
@@ -142,6 +150,8 @@ impl FetchTaskConfig {
 		session_info: &SessionInfo,
 		chunk_index: ChunkIndex,
 		span: jaeger::Span,
+		req_v1_protocol_name: ProtocolName,
+		req_v2_protocol_name: ProtocolName,
 	) -> Self {
 		let span = span
 			.child("fetch-task-config")
@@ -166,7 +176,7 @@ impl FetchTaskConfig {
 			group: session_info.validator_groups.get(core.group_responsible.0 as usize)
 				.expect("The responsible group of a candidate should be available in the corresponding session. qed.")
 				.clone(),
-			request: ChunkFetchingRequest {
+			request: v2::ChunkFetchingRequest {
 				candidate_hash: core.candidate_hash,
 				index: chunk_index,
 			},
@@ -175,6 +185,8 @@ impl FetchTaskConfig {
 			metrics,
 			sender,
 			span,
+			req_v1_protocol_name,
+			req_v2_protocol_name
 		};
 		FetchTaskConfig { live_in, prepared_running: Some(prepared_running) }
 	}
@@ -300,8 +312,8 @@ impl RunningTask {
 				.with_chunk_index(self.request.index.0)
 				.with_stage(jaeger::Stage::AvailabilityDistribution);
 			let chunk = match resp {
-				ChunkFetchingResponse::Chunk(resp) => resp.recombine_into_chunk(&self.request),
-				ChunkFetchingResponse::NoSuchChunk => {
+				Some(chunk) => chunk,
+				None => {
 					gum::debug!(
 						target: LOG_TARGET,
 						validator = ?validator,
@@ -351,7 +363,7 @@ impl RunningTask {
 		validator: &AuthorityDiscoveryId,
 		nerwork_error_freq: &mut gum::Freq,
 		canceled_freq: &mut gum::Freq,
-	) -> std::result::Result<ChunkFetchingResponse, TaskError> {
+	) -> std::result::Result<Option<ErasureChunk>, TaskError> {
 		gum::trace!(
 			target: LOG_TARGET,
 			origin = ?validator,
@@ -363,9 +375,12 @@ impl RunningTask {
 			"Starting chunk request",
 		);
 
-		let (full_request, response_recv) =
-			OutgoingRequest::new(Recipient::Authority(validator.clone()), self.request);
-		let requests = Requests::ChunkFetchingV1(full_request);
+		let (full_request, response_recv) = OutgoingRequest::new_with_fallback(
+			Recipient::Authority(validator.clone()),
+			self.request,
+			v1::ChunkFetchingRequest::from(self.request),
+		);
+		let requests = Requests::ChunkFetching(full_request);
 
 		self.sender
 			.send(FromFetchTask::Message(
@@ -379,7 +394,59 @@ impl RunningTask {
 			.map_err(|_| TaskError::ShuttingDown)?;
 
 		match response_recv.await {
-			Ok(resp) => Ok(resp),
+			Ok((bytes, protocol)) =>
+				if self.req_v2_protocol_name == protocol {
+					match v2::ChunkFetchingResponse::decode(&mut &bytes[..]) {
+						Ok(v2::ChunkFetchingResponse::Chunk(chunk)) => Ok(Some(chunk.into())),
+						Ok(v2::ChunkFetchingResponse::NoSuchChunk) => Ok(None),
+						Err(e) => {
+							gum::warn!(
+								target: LOG_TARGET,
+								origin = ?validator,
+								relay_parent = ?self.relay_parent,
+								group_index = ?self.group_index,
+								session_index = ?self.session_index,
+								chunk_index = ?self.request.index,
+								candidate_hash = ?self.request.candidate_hash,
+								err = ?e,
+								"Peer sent us invalid erasure chunk data"
+							);
+							Err(TaskError::PeerError)
+						},
+					}
+				} else if self.req_v1_protocol_name == protocol {
+					match v1::ChunkFetchingResponse::decode(&mut &bytes[..]) {
+						Ok(v1::ChunkFetchingResponse::Chunk(chunk)) =>
+							Ok(Some(chunk.recombine_into_chunk(&self.request.into()))),
+						Ok(v1::ChunkFetchingResponse::NoSuchChunk) => Ok(None),
+						Err(e) => {
+							gum::warn!(
+								target: LOG_TARGET,
+								origin = ?validator,
+								relay_parent = ?self.relay_parent,
+								group_index = ?self.group_index,
+								session_index = ?self.session_index,
+								chunk_index = ?self.request.index,
+								candidate_hash = ?self.request.candidate_hash,
+								err = ?e,
+								"Peer sent us invalid erasure chunk data"
+							);
+							Err(TaskError::PeerError)
+						},
+					}
+				} else {
+					gum::warn!(
+						target: LOG_TARGET,
+						origin = ?validator,
+						relay_parent = ?self.relay_parent,
+						group_index = ?self.group_index,
+						session_index = ?self.session_index,
+						chunk_index = ?self.request.index,
+						candidate_hash = ?self.request.candidate_hash,
+						"Peer sent us invalid erasure chunk data - unknown protocol"
+					);
+					Err(TaskError::PeerError)
+				},
 			Err(RequestError::InvalidResponse(err)) => {
 				gum::warn!(
 					target: LOG_TARGET,

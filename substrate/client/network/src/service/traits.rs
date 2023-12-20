@@ -551,8 +551,10 @@ pub trait NetworkRequest {
 		target: PeerId,
 		protocol: ProtocolName,
 		request: Vec<u8>,
+		fallback_protocol: Option<ProtocolName>,
+		fallback_request: Option<Vec<u8>>,
 		connect: IfDisconnected,
-	) -> Result<Vec<u8>, RequestFailure>;
+	) -> Result<(Vec<u8>, ProtocolName), RequestFailure>;
 
 	/// Variation of `request` which starts a request whose response is delivered on a provided
 	/// channel.
@@ -569,7 +571,9 @@ pub trait NetworkRequest {
 		target: PeerId,
 		protocol: ProtocolName,
 		request: Vec<u8>,
-		tx: oneshot::Sender<Result<Vec<u8>, RequestFailure>>,
+		fallback_protocol: Option<ProtocolName>,
+		fallback_request: Option<Vec<u8>>,
+		tx: oneshot::Sender<Result<(Vec<u8>, ProtocolName), RequestFailure>>,
 		connect: IfDisconnected,
 	);
 }
@@ -585,13 +589,21 @@ where
 		target: PeerId,
 		protocol: ProtocolName,
 		request: Vec<u8>,
+		fallback_protocol: Option<ProtocolName>,
+		fallback_request: Option<Vec<u8>>,
 		connect: IfDisconnected,
-	) -> Pin<Box<dyn Future<Output = Result<Vec<u8>, RequestFailure>> + Send + 'async_trait>>
+	) -> Pin<
+		Box<
+			dyn Future<Output = Result<(Vec<u8>, ProtocolName), RequestFailure>>
+				+ Send
+				+ 'async_trait,
+		>,
+	>
 	where
 		'life0: 'async_trait,
 		Self: 'async_trait,
 	{
-		T::request(self, target, protocol, request, connect)
+		T::request(self, target, protocol, request, fallback_protocol, fallback_request, connect)
 	}
 
 	fn start_request(
@@ -599,10 +611,21 @@ where
 		target: PeerId,
 		protocol: ProtocolName,
 		request: Vec<u8>,
-		tx: oneshot::Sender<Result<Vec<u8>, RequestFailure>>,
+		fallback_protocol: Option<ProtocolName>,
+		fallback_request: Option<Vec<u8>>,
+		tx: oneshot::Sender<Result<(Vec<u8>, ProtocolName), RequestFailure>>,
 		connect: IfDisconnected,
 	) {
-		T::start_request(self, target, protocol, request, tx, connect)
+		T::start_request(
+			self,
+			target,
+			protocol,
+			request,
+			fallback_protocol,
+			fallback_request,
+			tx,
+			connect,
+		)
 	}
 }
 

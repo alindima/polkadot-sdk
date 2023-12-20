@@ -34,6 +34,7 @@ use futures::{
 	stream::{FuturesUnordered, StreamExt},
 	task::{Context, Poll},
 };
+use sc_network::ProtocolName;
 use schnellru::{ByLength, LruMap};
 use task::{
 	FetchChunks, FetchChunksParams, FetchFull, FetchFullParams, FetchSystematicChunks,
@@ -48,7 +49,9 @@ use task::{RecoveryParams, RecoveryStrategy, RecoveryTask};
 
 use error::{log_error, Error, FatalError, Result};
 use polkadot_node_network_protocol::{
-	request_response::{v1 as request_v1, IncomingRequestReceiver},
+	request_response::{
+		v1 as request_v1, v2 as request_v2, IncomingRequestReceiver, IsRequest, ReqProtocolNames,
+	},
 	UnifiedReputationChange as Rep,
 };
 use polkadot_node_primitives::{AvailableData, ErasureChunk};
@@ -123,6 +126,10 @@ pub struct AvailabilityRecoverySubsystem {
 	metrics: Metrics,
 	/// The type of check to perform after available data was recovered.
 	post_recovery_check: PostRecoveryCheck,
+	/// TODO
+	req_v1_protocol_name: ProtocolName,
+	/// TODO
+	req_v2_protocol_name: ProtocolName,
 }
 
 #[derive(Clone, PartialEq, Debug)]
@@ -339,6 +346,8 @@ async fn launch_recovery_task<Context>(
 	recovery_strategies: VecDeque<Box<dyn RecoveryStrategy<<Context as SubsystemContext>::Sender>>>,
 	bypass_availability_store: bool,
 	post_recovery_check: PostRecoveryCheck,
+	req_v1_protocol_name: ProtocolName,
+	req_v2_protocol_name: ProtocolName,
 ) -> Result<()> {
 	let candidate_hash = receipt.hash();
 	let params = RecoveryParams {
@@ -351,6 +360,8 @@ async fn launch_recovery_task<Context>(
 		bypass_availability_store,
 		post_recovery_check,
 		pov_hash: receipt.descriptor.pov_hash,
+		req_v1_protocol_name,
+		req_v2_protocol_name,
 	};
 
 	let recovery_task = RecoveryTask::new(ctx.sender().clone(), params, recovery_strategies);
@@ -382,6 +393,8 @@ async fn handle_recover<Context>(
 	bypass_availability_store: bool,
 	post_recovery_check: PostRecoveryCheck,
 	maybe_block_number: Option<BlockNumber>,
+	req_v1_protocol_name: ProtocolName,
+	req_v2_protocol_name: ProtocolName,
 ) -> Result<()> {
 	let candidate_hash = receipt.hash();
 
@@ -558,6 +571,8 @@ async fn handle_recover<Context>(
 				recovery_strategies,
 				bypass_availability_store,
 				post_recovery_check,
+				req_v1_protocol_name,
+				req_v2_protocol_name,
 			)
 			.await
 		},
@@ -604,6 +619,7 @@ impl AvailabilityRecoverySubsystem {
 	/// instead of reencoding the available data.
 	pub fn for_collator(
 		req_receiver: IncomingRequestReceiver<request_v1::AvailableDataFetchingRequest>,
+		req_protocol_names: &ReqProtocolNames,
 		metrics: Metrics,
 	) -> Self {
 		Self {
@@ -612,6 +628,10 @@ impl AvailabilityRecoverySubsystem {
 			post_recovery_check: PostRecoveryCheck::PovHash,
 			req_receiver,
 			metrics,
+			req_v1_protocol_name: req_protocol_names
+				.get_name(request_v1::ChunkFetchingRequest::PROTOCOL),
+			req_v2_protocol_name: req_protocol_names
+				.get_name(request_v2::ChunkFetchingRequest::PROTOCOL),
 		}
 	}
 
@@ -619,6 +639,7 @@ impl AvailabilityRecoverySubsystem {
 	/// request data from backers.
 	pub fn with_fast_path(
 		req_receiver: IncomingRequestReceiver<request_v1::AvailableDataFetchingRequest>,
+		req_protocol_names: &ReqProtocolNames,
 		metrics: Metrics,
 	) -> Self {
 		Self {
@@ -627,12 +648,17 @@ impl AvailabilityRecoverySubsystem {
 			post_recovery_check: PostRecoveryCheck::Reencode,
 			req_receiver,
 			metrics,
+			req_v1_protocol_name: req_protocol_names
+				.get_name(request_v1::ChunkFetchingRequest::PROTOCOL),
+			req_v2_protocol_name: req_protocol_names
+				.get_name(request_v2::ChunkFetchingRequest::PROTOCOL),
 		}
 	}
 
 	/// Create a new instance of `AvailabilityRecoverySubsystem` which requests only chunks
 	pub fn with_chunks_only(
 		req_receiver: IncomingRequestReceiver<request_v1::AvailableDataFetchingRequest>,
+		req_protocol_names: &ReqProtocolNames,
 		metrics: Metrics,
 	) -> Self {
 		Self {
@@ -641,6 +667,10 @@ impl AvailabilityRecoverySubsystem {
 			post_recovery_check: PostRecoveryCheck::Reencode,
 			req_receiver,
 			metrics,
+			req_v1_protocol_name: req_protocol_names
+				.get_name(request_v1::ChunkFetchingRequest::PROTOCOL),
+			req_v2_protocol_name: req_protocol_names
+				.get_name(request_v2::ChunkFetchingRequest::PROTOCOL),
 		}
 	}
 
@@ -648,6 +678,7 @@ impl AvailabilityRecoverySubsystem {
 	/// above a threshold.
 	pub fn with_chunks_if_pov_large(
 		req_receiver: IncomingRequestReceiver<request_v1::AvailableDataFetchingRequest>,
+		req_protocol_names: &ReqProtocolNames,
 		metrics: Metrics,
 	) -> Self {
 		Self {
@@ -656,6 +687,10 @@ impl AvailabilityRecoverySubsystem {
 			post_recovery_check: PostRecoveryCheck::Reencode,
 			req_receiver,
 			metrics,
+			req_v1_protocol_name: req_protocol_names
+				.get_name(request_v1::ChunkFetchingRequest::PROTOCOL),
+			req_v2_protocol_name: req_protocol_names
+				.get_name(request_v2::ChunkFetchingRequest::PROTOCOL),
 		}
 	}
 
@@ -663,6 +698,7 @@ impl AvailabilityRecoverySubsystem {
 	/// PoV is above a threshold.
 	pub fn with_systematic_chunks_if_pov_large(
 		req_receiver: IncomingRequestReceiver<request_v1::AvailableDataFetchingRequest>,
+		req_protocol_names: &ReqProtocolNames,
 		metrics: Metrics,
 	) -> Self {
 		Self {
@@ -672,6 +708,10 @@ impl AvailabilityRecoverySubsystem {
 			post_recovery_check: PostRecoveryCheck::Reencode,
 			req_receiver,
 			metrics,
+			req_v1_protocol_name: req_protocol_names
+				.get_name(request_v1::ChunkFetchingRequest::PROTOCOL),
+			req_v2_protocol_name: req_protocol_names
+				.get_name(request_v2::ChunkFetchingRequest::PROTOCOL),
 		}
 	}
 
@@ -679,6 +719,7 @@ impl AvailabilityRecoverySubsystem {
 	/// from backers, with a fallback to recover from systematic chunks.
 	pub fn with_fast_path_then_systematic_chunks(
 		req_receiver: IncomingRequestReceiver<request_v1::AvailableDataFetchingRequest>,
+		req_protocol_names: &ReqProtocolNames,
 		metrics: Metrics,
 	) -> Self {
 		Self {
@@ -687,6 +728,10 @@ impl AvailabilityRecoverySubsystem {
 			post_recovery_check: PostRecoveryCheck::Reencode,
 			req_receiver,
 			metrics,
+			req_v1_protocol_name: req_protocol_names
+				.get_name(request_v1::ChunkFetchingRequest::PROTOCOL),
+			req_v2_protocol_name: req_protocol_names
+				.get_name(request_v2::ChunkFetchingRequest::PROTOCOL),
 		}
 	}
 
@@ -694,6 +739,7 @@ impl AvailabilityRecoverySubsystem {
 	/// systematic chunks, with a fallback to requesting regular chunks.
 	pub fn with_systematic_chunks(
 		req_receiver: IncomingRequestReceiver<request_v1::AvailableDataFetchingRequest>,
+		req_protocol_names: &ReqProtocolNames,
 		metrics: Metrics,
 	) -> Self {
 		Self {
@@ -702,6 +748,10 @@ impl AvailabilityRecoverySubsystem {
 			post_recovery_check: PostRecoveryCheck::Reencode,
 			req_receiver,
 			metrics,
+			req_v1_protocol_name: req_protocol_names
+				.get_name(request_v1::ChunkFetchingRequest::PROTOCOL),
+			req_v2_protocol_name: req_protocol_names
+				.get_name(request_v2::ChunkFetchingRequest::PROTOCOL),
 		}
 	}
 
@@ -714,6 +764,8 @@ impl AvailabilityRecoverySubsystem {
 			recovery_strategy_kind,
 			bypass_availability_store,
 			post_recovery_check,
+			req_v1_protocol_name,
+			req_v2_protocol_name,
 		} = self;
 
 		let (erasure_task_tx, erasure_task_rx) = futures::channel::mpsc::channel(16);
@@ -798,7 +850,9 @@ impl AvailabilityRecoverySubsystem {
 										recovery_strategy_kind.clone(),
 										bypass_availability_store,
 										post_recovery_check.clone(),
-										maybe_block_number
+										maybe_block_number,
+										req_v1_protocol_name.clone(),
+										req_v2_protocol_name.clone(),
 									).await
 							}
 						},
