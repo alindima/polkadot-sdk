@@ -1,0 +1,529 @@
+diff --git a/Cargo.lock b/Cargo.lock
+index 0c34d897d0..f9ba41b8b3 100644
+--- a/Cargo.lock
++++ b/Cargo.lock
+@@ -14360,12 +14360,9 @@ dependencies = [
+ [[package]]
+ name = "reed-solomon-novelpoly"
+ version = "1.0.2"
+-source = "registry+https://github.com/rust-lang/crates.io-index"
+-checksum = "58130877ca403ab42c864fbac74bb319a0746c07a634a92a5cfc7f54af272582"
+ dependencies = [
+  "derive_more",
+  "fs-err",
+- "itertools 0.11.0",
+  "static_init",
+  "thiserror",
+ ]
+@@ -16859,18 +16856,18 @@ checksum = "f97841a747eef040fcd2e7b3b9a220a7205926e60488e673d9e4926d27772ce5"
+ 
+ [[package]]
+ name = "serde"
+-version = "1.0.192"
++version = "1.0.193"
+ source = "registry+https://github.com/rust-lang/crates.io-index"
+-checksum = "bca2a08484b285dcb282d0f67b26cadc0df8b19f8c12502c13d966bf9482f001"
++checksum = "25dd9975e68d0cb5aa1120c288333fc98731bd1dd12f561e468ea4728c042b89"
+ dependencies = [
+  "serde_derive",
+ ]
+ 
+ [[package]]
+ name = "serde_derive"
+-version = "1.0.192"
++version = "1.0.193"
+ source = "registry+https://github.com/rust-lang/crates.io-index"
+-checksum = "d6c7207fbec9faa48073f3e3074cbe553af6ea512d7c21ba46e434e70ea9fbc1"
++checksum = "43576ca501357b9b071ac53cdc7da8ef0cbd9493d8df094cd821777ea6e894d3"
+ dependencies = [
+  "proc-macro2",
+  "quote",
+@@ -16899,9 +16896,9 @@ dependencies = [
+ 
+ [[package]]
+ name = "serde_spanned"
+-version = "0.6.4"
++version = "0.6.3"
+ source = "registry+https://github.com/rust-lang/crates.io-index"
+-checksum = "12022b835073e5b11e90a14f86838ceb1c8fb0325b72416845c487ac0fa95e80"
++checksum = "96426c9936fd7a0124915f9185ea1d20aa9445cc9821142f0a73bc9207a2e186"
+ dependencies = [
+  "serde",
+ ]
+@@ -19618,9 +19615,9 @@ checksum = "1f3ccbac311fea05f86f61904b462b55fb3df8837a366dfc601a0161d0532f20"
+ 
+ [[package]]
+ name = "tokio"
+-version = "1.33.0"
++version = "1.32.0"
+ source = "registry+https://github.com/rust-lang/crates.io-index"
+-checksum = "4f38200e3ef7995e5ef13baec2f432a6da0aa9ac495b2c0e8f3b7eec2c92d653"
++checksum = "17ed6077ed6cd6c74735e21f37eb16dc3935f96878b1fe961074089cc80893f9"
+ dependencies = [
+  "backtrace",
+  "bytes",
+@@ -19742,9 +19739,9 @@ dependencies = [
+ 
+ [[package]]
+ name = "toml_datetime"
+-version = "0.6.5"
++version = "0.6.3"
+ source = "registry+https://github.com/rust-lang/crates.io-index"
+-checksum = "3550f4e9685620ac18a50ed434eb3aec30db8ba93b0287467bca5826ea25baf1"
++checksum = "7cda73e2f1397b1262d6dfdcef8aafae14d1de7748d66822d3bfeeb6d03e5e4b"
+ dependencies = [
+  "serde",
+ ]
+diff --git a/Cargo.toml b/Cargo.toml
+index b8e0a97da2..baa52a8f82 100644
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -474,9 +474,9 @@ members = [
+ 	"substrate/utils/frame/try-runtime/cli",
+ 	"substrate/utils/prometheus",
+ 	"substrate/utils/wasm-builder",
+- 	"cumulus/parachains/integration-tests/emulated/networks/rococo-westend-system",
++	"cumulus/parachains/integration-tests/emulated/networks/rococo-westend-system",
+ ]
+-default-members = [ "polkadot", "substrate/bin/node/cli" ]
++default-members = ["polkadot", "substrate/bin/node/cli"]
+ 
+ [profile.release]
+ # Polkadot runtime requires unwinding.
+diff --git a/notes.md b/notes.md
+new file mode 100644
+index 0000000000..10369be705
+--- /dev/null
++++ b/notes.md
+@@ -0,0 +1,28 @@
++CPP with systematic, 0 latency:
++    CPU usage per block 7.87s
++
++CPP with systematic, 1ms-100ms latency:
++    CPU usage per block 7.88s
++
++Rust with systematic, no latency, AVX:
++    CPU usage per block 9.65s
++
++Rust with systematic, 1ms-100ms latency, AVX:
++    Not done
++
++Rust with systematic, no latency, no AVX:
++    CPU usage per block 10.58s
++
++Rust with systematic, 1ms-100ms latency, no AVX:
++    CPU usage per block 10.67s
++
++----------------
++
++CPP with regular, 0 latency:
++    CPU usage per block 17.55s
++
++Rust with regular, 0 latency, no AVX:
++    CPU usage per block 24.94s
++
++Rust with regular, 0 latency, AVX:
++    CPU usage per block 25.3
+diff --git a/polkadot/erasure-coding/Cargo.toml b/polkadot/erasure-coding/Cargo.toml
+index 8d5b0cbabc..2e69f8a986 100644
+--- a/polkadot/erasure-coding/Cargo.toml
++++ b/polkadot/erasure-coding/Cargo.toml
+@@ -7,16 +7,26 @@ edition.workspace = true
+ license.workspace = true
+ 
+ [dependencies]
++# novelpoly = { git = "https://github.com/paritytech/reed-solomon-novelpoly.git", package = "reed-solomon-novelpoly" }
++novelpoly = { path = "/home/alin/code/reed-solomon-novelpoly/reed-solomon-novelpoly", package = "reed-solomon-novelpoly" }
++
+ polkadot-primitives = { path = "../primitives" }
+ polkadot-node-primitives = { package = "polkadot-node-primitives", path = "../node/primitives" }
+-novelpoly = { package = "reed-solomon-novelpoly", version = "1.0.2" }
+-parity-scale-codec = { version = "3.6.1", default-features = false, features = ["std", "derive"] }
++# novelpoly = { package = "reed-solomon-novelpoly", path = "/Users/alindima/Desktop/code/reed-solomon-novelpoly/reed-solomon-novelpoly"}
++# "avx",
++#]
++parity-scale-codec = { version = "3.6.1", default-features = false, features = [
++    "std",
++    "derive",
++] }
+ sp-core = { path = "../../substrate/primitives/core" }
+ sp-trie = { path = "../../substrate/primitives/trie" }
+ thiserror = "1.0.48"
+ 
+ [dev-dependencies]
+-criterion = { version = "0.4.0", default-features = false, features = ["cargo_bench_support"] }
++criterion = { version = "0.4.0", default-features = false, features = [
++    "cargo_bench_support",
++] }
+ quickcheck = { version = "1.0.3", default-features = false }
+ 
+ [[bench]]
+diff --git a/polkadot/erasure-coding/build.rs b/polkadot/erasure-coding/build.rs
+new file mode 100644
+index 0000000000..438aff36df
+--- /dev/null
++++ b/polkadot/erasure-coding/build.rs
+@@ -0,0 +1,3 @@
++fn main() {
++    println!("cargo:rustc-link-search=/home/alin/lib/usr/local/lib/");
++}
+\ No newline at end of file
+diff --git a/polkadot/erasure-coding/src/cpp.rs b/polkadot/erasure-coding/src/cpp.rs
+new file mode 100644
+index 0000000000..7381f3fefd
+--- /dev/null
++++ b/polkadot/erasure-coding/src/cpp.rs
+@@ -0,0 +1,92 @@
++use super::*;
++
++#[repr(C)]
++#[derive(Debug, Copy, Clone)]
++pub struct Shard {
++	pub len: usize,
++	pub data: *mut u8,
++}
++#[repr(C)]
++#[derive(Debug, Copy, Clone)]
++pub struct Shards {
++	pub original_ptr: *mut ::std::os::raw::c_void,
++	pub count: usize,
++	pub shards: *mut Shard,
++}
++
++#[repr(C)]
++#[derive(Debug, Copy, Clone)]
++pub struct DecodedData {
++    pub original_ptr: *mut ::std::os::raw::c_void,
++    pub len: usize,
++    pub data: *mut u8,
++}
++
++#[link(name = "reed-solomon-c", kind = "static")]
++extern "C" {
++    #[link_name = "\u{1}_Z6encodemPhmP6Shards"]
++	pub fn encode(n_validators: usize, bytes: *mut u8, bytes_len: usize, output: *mut Shards)
++		-> u8;
++
++    #[link_name = "\u{1}_Z11drop_shardsPv"]
++    pub fn drop_shards(original_ptr: *mut ::std::os::raw::c_void);
++
++    #[link_name = "\u{1}_Z6decodemP5Shardm"]
++    pub fn decode(n_validators: usize, shards: *mut Shard, n_shards: usize) -> DecodedData;
++
++    #[link_name = "\u{1}_Z17drop_decoded_dataPv"]
++    pub fn drop_decoded_data(original_ptr: *mut ::std::os::raw::c_void);
++}
++
++pub fn obtain_chunks(n_validators: usize, data: &AvailableData) -> Vec<Vec<u8>> {
++	let mut encoded = data.encode();
++	assert!(!encoded.is_empty());
++
++	let mut shard_vec: Vec<Shard> =
++		(0..n_validators).map(|_| Shard { len: 0, data: std::ptr::null_mut() }).collect();
++	let mut shards =
++		Shards { original_ptr: std::ptr::null_mut(), count: n_validators, shards: shard_vec.as_mut_ptr() };
++	let len = encoded.len();
++	let res =
++		unsafe { encode(n_validators, encoded.as_mut_ptr(), len, &mut shards as *mut Shards) };
++	assert_eq!(res, 0);
++	shard_vec.leak();
++
++	assert_eq!(shards.count, n_validators);
++
++    let original_ptr = shards.original_ptr;
++    let slice = unsafe { std::slice::from_raw_parts(shards.shards, shards.count) };
++	let res = slice
++		.iter()
++		.map(|chunk| unsafe {std::slice::from_raw_parts(chunk.data, chunk.len)}.to_vec());
++
++	let res = res.collect();
++
++    unsafe {
++        drop_shards(original_ptr);
++    }
++
++    res
++}
++
++pub fn reconstruct(n_validators: usize, chunks: Vec<&[u8]>) -> AvailableData
++{  
++    let n_chunks = chunks.len();
++    let mut shards: Vec<_> = chunks.into_iter().map(|chunk| {
++        Shard {
++            data: chunk.as_ptr() as *mut _,
++            len: chunk.len()
++        }
++    }).collect();
++    let decoded_data = unsafe {decode(n_validators, shards.as_mut_ptr(), n_chunks)};
++    let bytes = unsafe {std::slice::from_raw_parts(decoded_data.data, decoded_data.len)}.to_vec();
++
++	let res = Decode::decode(&mut &bytes[..]).unwrap();
++
++    unsafe {
++        drop_decoded_data(decoded_data.original_ptr);
++    }
++
++    res
++}
++
+diff --git a/polkadot/erasure-coding/src/lib.rs b/polkadot/erasure-coding/src/lib.rs
+index c80331e20c..762ba782ca 100644
+--- a/polkadot/erasure-coding/src/lib.rs
++++ b/polkadot/erasure-coding/src/lib.rs
+@@ -36,6 +36,8 @@ use thiserror::Error;
+ 
+ use novelpoly::{CodeParams, WrappedShard};
+ 
++pub mod cpp;
++
+ // we are limited to the field order of GF(2^16), which is 65536
+ const MAX_VALIDATORS: usize = novelpoly::f2e16::FIELD_SIZE;
+ 
+@@ -182,13 +184,14 @@ pub fn reconstruct_from_systematic<T: Decode>(
+ ///
+ /// Works only up to 65536 validators, and `n_validators` must be non-zero.
+ pub fn obtain_chunks_v1(n_validators: usize, data: &AvailableData) -> Result<Vec<Vec<u8>>, Error> {
+-	obtain_chunks(n_validators, data)
++	// obtain_chunks(n_validators, data)
++	Ok(cpp::obtain_chunks(n_validators, data))
+ }
+ 
+ /// Obtain erasure-coded chunks, one for each validator.
+ ///
+ /// Works only up to 65536 validators, and `n_validators` must be non-zero.
+-pub fn obtain_chunks<T: Encode>(n_validators: usize, data: &T) -> Result<Vec<Vec<u8>>, Error> {
++fn obtain_chunks<T: Encode>(n_validators: usize, data: &T) -> Result<Vec<Vec<u8>>, Error> {
+ 	let params = code_params(n_validators)?;
+ 	let encoded = data.encode();
+ 
+@@ -211,11 +214,19 @@ pub fn obtain_chunks<T: Encode>(n_validators: usize, data: &T) -> Result<Vec<Vec
+ /// are provided, recovery is not possible.
+ ///
+ /// Works only up to 65536 validators, and `n_validators` must be non-zero.
+-pub fn reconstruct_v1<'a, I: 'a>(n_validators: usize, chunks: I) -> Result<AvailableData, Error>
+-where
+-	I: IntoIterator<Item = (&'a [u8], usize)>,
+-{
+-	reconstruct(n_validators, chunks)
++pub fn reconstruct_v1(
++	n_validators: usize,
++	mut chunks: Vec<(&[u8], usize)>,
++) -> Result<AvailableData, Error> {
++	// reconstruct(n_validators, chunks)
++	let cpp_chunks = {
++		let mut new_chunks = vec![vec![]; n_validators];
++		for (chunk, index) in chunks.into_iter() {
++			new_chunks[index] = chunk.to_vec();
++		}
++		new_chunks
++	};
++	Ok(cpp::reconstruct(n_validators, cpp_chunks.iter().map(|c| c.as_slice()).collect()))
+ }
+ 
+ /// Reconstruct decodable data from a set of chunks.
+diff --git a/polkadot/node/network/availability-recovery/src/lib.rs b/polkadot/node/network/availability-recovery/src/lib.rs
+index f548b6c54a..8a4a8b1128 100644
+--- a/polkadot/node/network/availability-recovery/src/lib.rs
++++ b/polkadot/node/network/availability-recovery/src/lib.rs
+@@ -919,13 +919,16 @@ async fn erasure_task_thread(
+ 			Some(ErasureTask::Reconstruct(n_validators, chunks, sender)) => {
+ 				let _ = sender.send(polkadot_erasure_coding::reconstruct_v1(
+ 					n_validators,
+-					chunks.iter().map(|(c_index, chunk)| {
+-						(
+-							&chunk.chunk[..],
+-							usize::try_from(c_index.0)
+-								.expect("usize is at least u32 bytes on all modern targets."),
+-						)
+-					}),
++					chunks
++						.iter()
++						.map(|(c_index, chunk)| {
++							(
++								&chunk.chunk[..],
++								usize::try_from(c_index.0)
++									.expect("usize is at least u32 bytes on all modern targets."),
++							)
++						})
++						.collect(),
+ 				));
+ 			},
+ 			Some(ErasureTask::Reencode(n_validators, root, available_data, sender)) => {
+diff --git a/polkadot/node/subsystem-bench/examples/availability_read.yaml b/polkadot/node/subsystem-bench/examples/availability_read.yaml
+index 311ea97214..72ab07166d 100644
+--- a/polkadot/node/subsystem-bench/examples/availability_read.yaml
++++ b/polkadot/node/subsystem-bench/examples/availability_read.yaml
+@@ -1,57 +1,21 @@
+ TestConfiguration:
+-# Test 1
+-- objective: !DataAvailabilityRead
+-    fetch_from_backers: false
+-  n_validators: 300
+-  n_cores: 20
+-  min_pov_size: 5120
+-  max_pov_size: 5120
+-  peer_bandwidth: 52428800
+-  bandwidth: 52428800
+-  latency:
+-    min_latency:
+-      secs: 0
+-      nanos: 1000000
+-    max_latency:
+-      secs: 0
+-      nanos: 100000000
+-  error: 3
+-  num_blocks: 3
+-
+-# Test 2
+-- objective: !DataAvailabilityRead
+-    fetch_from_backers: false
+-  n_validators: 500
+-  n_cores: 20
+-  min_pov_size: 5120
+-  max_pov_size: 5120
+-  peer_bandwidth: 52428800
+-  bandwidth: 52428800
+-  latency:
+-    min_latency:
+-      secs: 0
+-      nanos: 1000000
+-    max_latency:
+-      secs: 0
+-      nanos: 100000000
+-  error: 3
+-  num_blocks: 3
+-
+ # Test 3
+ - objective: !DataAvailabilityRead
+     fetch_from_backers: false
+   n_validators: 1000
+-  n_cores: 20
++  n_cores: 40
+   min_pov_size: 5120
+   max_pov_size: 5120
+-  peer_bandwidth: 52428800
+-  bandwidth: 52428800
++  peer_bandwidth: 524288000
++  bandwidth: 524288000
+   latency:
+     min_latency:
+       secs: 0
+-      nanos: 1000000
++      # nanos: 1000000
++      nanos: 0
+     max_latency:
+       secs: 0
+-      nanos: 100000000
+-  error: 3
+-  num_blocks: 3
++      # nanos: 100000000
++      nanos: 0
++  error: 0
++  num_blocks: 5
+diff --git a/polkadot/node/subsystem-bench/src/availability/mod.rs b/polkadot/node/subsystem-bench/src/availability/mod.rs
+index 7d6865fee9..9e063d11cb 100644
+--- a/polkadot/node/subsystem-bench/src/availability/mod.rs
++++ b/polkadot/node/subsystem-bench/src/availability/mod.rs
+@@ -60,8 +60,8 @@ use polkadot_node_primitives::{AvailableData, ErasureChunk};
+ use super::{cli::TestObjective, core::mock::AlwaysSupportsParachains};
+ use polkadot_node_subsystem_test_helpers::mock::new_block_import_info;
+ use polkadot_primitives::{
+-	CandidateHash, CandidateReceipt, GroupIndex, Hash, HeadData, PersistedValidationData,
+-	ValidatorIndex,
++	BlockNumber, CandidateHash, CandidateReceipt, ChunkIndex, GroupIndex, Hash, HeadData,
++	PersistedValidationData, ValidatorIndex,
+ };
+ use polkadot_primitives_test_helpers::{dummy_candidate_receipt, dummy_hash};
+ use sc_service::SpawnTaskHandle;
+@@ -147,7 +147,8 @@ fn prepare_test_inner(
+ 			Metrics::try_register(&dependencies.registry).unwrap(),
+ 		)
+ 	} else {
+-		AvailabilityRecoverySubsystem::with_chunks_only(
++		AvailabilityRecoverySubsystem::with_systematic_chunks(
++		// AvailabilityRecoverySubsystem::with_chunks_only(
+ 			collation_req_receiver,
+ 			Metrics::try_register(&dependencies.registry).unwrap(),
+ 		)
+@@ -307,7 +308,7 @@ fn derive_erasure_chunks_with_proofs_and_root(
+ 		.enumerate()
+ 		.map(|(index, (proof, chunk))| ErasureChunk {
+ 			chunk: chunk.to_vec(),
+-			index: ValidatorIndex(index as _),
++			index: ChunkIndex(index as _),
+ 			proof: Proof::try_from(proof).unwrap(),
+ 		})
+ 		.collect::<Vec<ErasureChunk>>();
+@@ -345,6 +346,7 @@ pub async fn benchmark_availability_read(env: &mut TestEnvironment, mut state: T
+ 					Some(GroupIndex(
+ 						candidate_num as u32 % (std::cmp::max(5, config.n_cores) / 5) as u32,
+ 					)),
++					Some(block_num as u32),
+ 					tx,
+ 				),
+ 			);
+diff --git a/polkadot/node/subsystem-bench/src/core/mock/network_bridge.rs b/polkadot/node/subsystem-bench/src/core/mock/network_bridge.rs
+index 2bc8d22234..8442f7583a 100644
+--- a/polkadot/node/subsystem-bench/src/core/mock/network_bridge.rs
++++ b/polkadot/node/subsystem-bench/src/core/mock/network_bridge.rs
+@@ -91,7 +91,7 @@ impl MockNetworkBridgeTx {
+ 					.peer_stats_by_id(authority_discovery_id.clone())
+ 					.inc_received(outgoing_request.payload.encoded_size());
+ 
+-				let validator_index: usize = outgoing_request.payload.index.0 as usize;
++				let chunk_index: usize = outgoing_request.payload.index.0 as usize;
+ 				let candidate_hash = outgoing_request.payload.candidate_hash;
+ 
+ 				let candidate_index = self
+@@ -102,8 +102,7 @@ impl MockNetworkBridgeTx {
+ 				gum::warn!(target: LOG_TARGET, ?candidate_hash, candidate_index, "Candidate mapped to index");
+ 
+ 				let chunk: ChunkResponse =
+-					self.availabilty.chunks.get(*candidate_index as usize).unwrap()
+-						[validator_index]
++					self.availabilty.chunks.get(*candidate_index as usize).unwrap()[chunk_index]
+ 						.clone()
+ 						.into();
+ 				let mut size = chunk.encoded_size();
+diff --git a/polkadot/node/subsystem-bench/src/core/mock/runtime_api.rs b/polkadot/node/subsystem-bench/src/core/mock/runtime_api.rs
+index 9cbe025ae8..0a5a4a3baf 100644
+--- a/polkadot/node/subsystem-bench/src/core/mock/runtime_api.rs
++++ b/polkadot/node/subsystem-bench/src/core/mock/runtime_api.rs
+@@ -16,13 +16,15 @@
+ //!
+ //! A generic runtime api subsystem mockup suitable to be used in benchmarks.
+ 
+-use polkadot_primitives::{GroupIndex, IndexedVec, SessionInfo, ValidatorIndex};
+-
+ use polkadot_node_subsystem::{
+ 	messages::{RuntimeApiMessage, RuntimeApiRequest},
+ 	overseer, SpawnedSubsystem, SubsystemError,
+ };
+ use polkadot_node_subsystem_types::OverseerSignal;
++use polkadot_primitives::{
++	vstaging::{node_features, NodeFeatures},
++	GroupIndex, IndexedVec, SessionInfo, ValidatorIndex,
++};
+ 
+ use crate::core::configuration::{TestAuthorities, TestConfiguration};
+ use futures::FutureExt;
+@@ -98,6 +100,19 @@ impl MockRuntimeApi {
+ 						) => {
+ 							let _ = sender.send(Ok(Some(self.session_info())));
+ 						},
++						RuntimeApiMessage::Request(
++							_request,
++							RuntimeApiRequest::NodeFeatures(_session_index, sender),
++						) => {
++							let mut node_features = NodeFeatures::new();
++							node_features.resize(
++								node_features::AVAILABILITY_CHUNK_SHUFFLING as usize + 1,
++								false,
++							);
++							node_features
++								.set(node_features::AVAILABILITY_CHUNK_SHUFFLING.into(), true);
++							let _ = sender.send(Ok(node_features));
++						},
+ 						// Long term TODO: implement more as needed.
+ 						_ => {
+ 							unimplemented!("Unexpected runtime-api message")

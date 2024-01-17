@@ -474,9 +474,9 @@ members = [
 	"substrate/utils/frame/try-runtime/cli",
 	"substrate/utils/prometheus",
 	"substrate/utils/wasm-builder",
- 	"cumulus/parachains/integration-tests/emulated/networks/rococo-westend-system",
+	"cumulus/parachains/integration-tests/emulated/networks/rococo-westend-system",
 ]
-default-members = [ "polkadot", "substrate/bin/node/cli" ]
+default-members = ["polkadot", "substrate/bin/node/cli"]
 
 [profile.release]
 # Polkadot runtime requires unwinding.
